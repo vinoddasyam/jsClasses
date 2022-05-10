@@ -1,0 +1,157 @@
+syntax = "proto3";
+
+// Mapping describes a relationship between a single Field Testing Suite Observation Type, a QandA Observation Type
+// and any Additional Criteria which must be considered within the QandA ecosystem to ensure the mapping is applicable.
+message Mapping {
+    // A unique identifier or resource name for the mapping.
+    string name = 1;
+    // Contains the information necessary to uniquely identify an observation recorded within Field Testing Suite.
+    FieldTestingSuiteObservationType field_testing_suite_observation_type = 2;
+    // Encapsulates the properties required to uniquely identify an observation recorded using Questions and Answers
+    // (Qanda) reference data.
+    QandAObservationType qanda_observation_type = 3;
+    // Criteria which should be applied to additional questions and answers that are not present with a QandA
+    // observation. It is incumbent on the client using this mapping to determine the source of truth for any
+    // such answer values and filter any QandA observations further. Each critieria is logically ANDed (e.g.,
+    // criteria 1 should be satisfied and criteria should also be satisifed to for the mapping to apply).
+    repeated AdditionalCriteria additional_criteria = 4;
+
+    // TODO standard audit information    
+}
+
+// FieldTestingSuiteObservationType encapsulates the properties necessary to fully describe a unique Field Testing
+// Suite Observation Type.
+message FieldTestingSuiteObservationType {
+    // A unique identifier for the Observation References resource (https://product360.assets.engineering/docs/performance/observation-references/overview/).
+    string observation_reference = 1;
+    // The crop observation detail id which uniquely identifies the majority of properties for a Field Testing Suite
+    // observation: observation type, crop, reference code, descriptor and technology.
+    string crop_observation_detail_id = 2;
+    // A value associated with the Crop Observation Detail Id within the observations made for Plots, stored in the
+    // 'GROWTH_STAGE' column. (nullable)
+    string midas_growth_stage = 3;
+}
+
+// QandAObservaitonType encapsulates the properties necessary to fully describe a unique Observation captured using
+// QandA reference data.
+message QandAObservationType {
+    // The type of entity for which this observation has been collected (e.g., the same observation can have been collected
+    // for a SET and a SET_ENTRY, this field separates them).
+    string entity_type = 1;
+    // The class sequence, as sourced from the Question Groups API, which specifies the questions which were answered to
+    // create this observation.
+    string question_class = 2;
+    // The primary question answered by this observation which must be present as its value does not constitute a new,
+    // unique observation.
+    string primary_question_code = 3;
+    // The question group instance which directly maps to the class and answer filter, if available. (nullable)
+    string question_group_instance = 4;
+
+    message Answer {
+        // The code for the question which has been answered by the value and/or qanda key.
+        string question_code = 1;
+        // The answer to the question as a string.
+        string value = 2;
+        // The unique identifier for the value which is persistent across value string changes, sourced from the Questions API.
+        string qanda_key = 3;
+        // The name of the categorical unit of measure (i.e., a list of valid string values and keys), sourced from the
+        // Questions API. Only populated when the qanda key is also populated, will be empty otherwise.
+        string categorical_unit_of_measure = 4;
+        // The name of the numeric unit of measure when the answer value is of a numeric value type.
+        int64 numeric_unit_of_measure = 5;
+    }
+    // List of unique answer values which constitute a unique observation for the associated entity type. The uniqueness
+    // determination is derived from the uniqueness information associated with Question Group Instances in the Question
+    // Groups API that identify questions and units of measure that create unique observations.
+    repeated Answer unique_answers = 5;
+}
+
+// AdditionalCriteria represents a predicate which should be satisfied by entities associated with an observation, but not
+// the observation directly. It is intended the criteria is applied post-hoc to futher filter observations based on answers
+// found in other sources of truth, _not_ as a query parameter to observation source systems.
+message AdditionalCriteria {
+    // The question for which an answer is expected, although not expected _with_ any observation.
+    string question_code = 1;
+
+    // CategoricalQanda represents a criteria predicate applied to string values which have QandA keys available.
+    message CategoricalQanda {
+        message Criterion {
+            // A QandA key value answer to the question. (nullable)
+            string key = 1;
+            // A string value answer to the question. (nullable)
+            string value = 2;
+            // The string unit of measure associated with the question from which the key and/or value are sourced.
+            string unit_of_measure = 3;
+            // Flag that if false indicates the key or value should be matched, but if true indicates that the value
+            // should _not_ be matched. Defaults to false, making the assumption that categorical criterion are meant
+            // to exactly match values and not exclude them.
+            bool exclusive = 4;
+        }
+        // The categorical criteria to apply, each should be logically ORed (e.g., criterion 1 can be satisfied or
+        // criterion 2 can be satisifed).
+        repeated Criterion criterion = 1;
+    }
+
+    // NumericRange represents a semi or fully closed continuous numeric range for a value to be between when represented
+    // in the given unit of measure.
+    message NumericRange {
+        // The lower bound, or minimum value of the range. (nullable)
+        double min = 1;
+        // Flag indicating if the lower bound of the range is inclusive of the minimum value (i.e., >= when true).
+        bool min_inclusive = 2;
+        // The upper bound, or maximum value of the range. (nullable)
+        double max = 3;
+        // Flag indicating if the upper bound of the range is inclusive of the maximum value (i.e., <= when true).
+        bool max_inclusive = 4;
+        // The unit of measure for which the provided min and/or max values are represented. Responsibility for
+        // converting any values to the appropriate unit of measure for range comparison belongs to the client.
+        string unit_of_measure = 5;
+    }
+
+    // BooleanValue represents the expected true/false answer for a question.
+    message BooleanValue {
+        // The expected true/false answer value.
+        bool value = 1;
+    }
+
+    // The single criteria for which the answer to the question should be compared. Given that questions are well-defined
+    // with data types, the available criteria should be limited to the data type of the question.
+    oneof value_criteria {
+        // A criteria for matching or not matching strings.
+        CategoricalQanda categorical = 2;
+        // A criteria to be used for numeric comapisons, both wide and narrow (i.e., approximately exact) ranges.
+        NumericRange numeric = 3;
+        // A criteria for indicating if an answer should be true or false.
+        BooleanValue boolean = 4;
+    }
+}
+
+// MappingCollection enables clients to group mappings into custom collections appropriate for end-user applications.  
+message MappingCollection {
+    // A unique identifier or resource name for the mapping collection.
+    string name = 1;
+    // The end-user provided name of the mapping collection (e.g., MST).
+    string display_name = 2;
+    // The application for which this mapping is defined. This may be controlled vocabulary based on applications
+    // registered as answers to a question, but could also be free text. (nullable)
+    string application = 3;
+   
+    // BusinessUnit encapsulates the answer to a BUSUNIT question using the NAME unit of measure.
+    message BusinessUnit {
+        // The unique QandA key identifying the business unit answer.
+        string key = 1;
+        // The string value associated with the QandA key answer.
+        string name = 2;
+    }
+    // An array of business units for which this mapping collection is appropriate. (nullable)
+    repeated BusinessUnit business_units = 4;
+    // An array of the actual Mapping objects which are part of this collection.
+    repeated Mapping mappings = 5;
+    // A map of key, value pairs which are wholly owned by the end-user clients which create them and not the purview
+    // of the service owners. This enables clients to write custom data to a collection for their applications to
+    // utilize (e.g., whether or not observations derived from mappings in this collect should be preferred for higher
+    // values or lower values, how to order any observations derived from mappings based on preference).
+    map<string,string> annotations = 6;
+
+    // TODO standard audit information
+}
